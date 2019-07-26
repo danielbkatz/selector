@@ -1,74 +1,56 @@
-rm(list=ls())
-#
+
 #install these packages first, if necessary
-#
 library(psych)
 library(CompQuadForm)
 library(reshape2)
 library(lavaan)
 library(ggplot2)
 library(goftest)
-
-#worker function. Easy to put in parallel
-run.bootstrap <- function(X, b.reps, sample.transformed, startvals){
-  set.seed(X)
-  pb <- txtProgressBar(min = 0, max = b.reps, style = 3)
-  pml=NULL; psb=NULL; pss=NULL;
-  for(b in 1:b.reps){
-    setTxtProgressBar(pb, b)
-    boot.sample = sample.transformed[sample(1:nrow(sample.transformed), replace=T), ]
-    f.boot = tryCatch(sem(model,boot.sample, start=startvals), error=function(w) { TRUE})
-    f.boot.sb = tryCatch(sem(model, boot.sample, test="satorra.bentler", start=parTable(f.boot)),error=function(w) { TRUE})
-    f.boot.ss = tryCatch(sem(model, boot.sample, test="scaled.shifted", start=parTable(f.boot)),error=function(w) { TRUE})
-
-    pml <- c(pml,fitmeasures(f.boot,"pvalue"))
-    psb <- c(psb,fitmeasures(f.boot.sb,"pvalue.scaled"))
-    pss <- c(pss,fitmeasures(f.boot.ss,"pvalue.scaled"))
-
-  }
-  return(data.frame(pml,psb,pss))
-}
-
-
+library(MASS)
 
 selector <- function(f, b.reps=1000, seed=1){
-  #continuous case
-  f.orig <- f
-  orig.sample <- lavInspect(f.orig, what="data")
-  model <- parTable(f.orig)
-
-  porig <- fitmeasures(sem(model, orig.sample), "pvalue")
-  porig <- c(porig, fitmeasures(sem(model, orig.sample, test="satorra.bentler"), "pvalue.scaled"))
-  porig <- c(porig, fitmeasures(sem(model, orig.sample, test="scaled.shifted"), "pvalue.scaled"))
-
-
+  #continuous case, we assume ML
+  if(f@Options$estimator != "ML"){
+    cat("Object f must be fitted with estimator= ML\n")
+    return()
+  }
+    
+  orig.sample <- lavInspect(f, what="data")
+  startvalues <- parTable(f)
+  df <- fitmeasures(f, "df")
+  
+  porigs <- test_pvalues(f)
+  
+  outputstring <- paste("\n Candidate p-values are: \n",paste(names(porigs), round(porigs,3), sep = ":", collapse = ",  "))
+  cat(paste(outputstring, "\n"))
   #####
   # transform sample a la Bollen-Stine
-  Sigma.hat <- lavaan:::computeSigmaHat(lavmodel = f.orig@Model)
+  Sigma.hat <- lavaan:::computeSigmaHat(lavmodel = f@Model)
   sigma.sqrt <- lav_matrix_symmetric_sqrt(Sigma.hat[[1]])
-  S.inv.sqrt <- lav_matrix_symmetric_sqrt(f.orig@SampleStats@icov[[1]])
+  S.inv.sqrt <- lav_matrix_symmetric_sqrt(f@SampleStats@icov[[1]])
   sample.transformed <- data.frame(as.matrix(orig.sample) %*% S.inv.sqrt %*% sigma.sqrt)
   colnames(sample.transformed) <- colnames(orig.sample)
   #####
 
   ## run bootstrap in serial
-  res.df <- run.bootstrap(X=seed, b.reps=b.reps, sample.transformed=sample.transformed, startvals=model)
-  colnames(res.df)<- c("ML", "SB", "SS")
+  boot.df <- run_bootstrap(X=seed, b.reps=b.reps, sample.transformed=sample.transformed, startvalues=startvalues)
+  
+  colnames(boot.df)<- names(porigs)
 
-  distUniform= as.vector(sapply(res.df,function(x) ad.test(x, null="punif")$statistic ))
+  distUniform= as.vector(sapply(boot.df,function(x) ad.test(x, null="punif")$statistic ))
 
   selected <- which.min(distUniform)
-  selectedname <- colnames(res.df)[selected]
-  pselected <- porig[selected]
+  selectedname <- colnames(boot.df)[selected]
+  pselected <- porigs[selectedname]
 
-  cat("The selector selects: ", selectedname, " with p-value", pselected)
+  cat("\n The selector selects: ", selectedname, " with p-value", pselected, "\n")
 
-  rownames(res.df) = NULL
-  melted = melt(res.df)
+  rownames(boot.df) = NULL
+  melted = melt(boot.df, id.vars = NULL)
   melted$statistic <- melted$variable
 
   #plot of the p-values
-  ggplot(melted, aes(value))+geom_histogram()+facet_wrap(~statistic)
+  ggplot(melted, aes(value))+geom_histogram(binwidth=0.02)+facet_wrap(~statistic)
 
 }
 
