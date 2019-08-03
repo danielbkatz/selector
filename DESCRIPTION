@@ -1,11 +1,10 @@
-Package: selector 
+Package: testselector 
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Selection of best test statistic
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
+Author: Njål Foldnes
+Maintainer: The package maintainer <njal.foldnes@gmail.com>
+Description: Bootstrap selection of appropriate test statistic for SEM/CFA models
 License: What license is it under?
 Encoding: UTF-8
 LazyData: true
@@ -13,3 +12,10 @@ Suggests:
     knitr,
     rmarkdown
 VignetteBuilder: knitr
+Imports:
+  lavaan,
+  CompQuadForm,
+  reshape2,
+  goftest, 
+  ggplot2
+RoxygenNote: 6.1.1
